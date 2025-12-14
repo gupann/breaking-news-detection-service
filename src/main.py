@@ -14,6 +14,7 @@ from src.config import (
     WEIGHT_VELOCITY,
     WEIGHT_CATEGORY,
     WEIGHT_RECENCY,
+    CLEANUP_INTERVAL_SECONDS,
 )
 from src.models import NewsArticle, ScoredArticle
 from src.scoring import (
@@ -32,6 +33,7 @@ class StreamProcessor:
         self.time_acceleration = time_acceleration
         self.is_running = False
         self._task: Optional[asyncio.Task] = None
+        self._cleanup_task: Optional[asyncio.Task] = None
         self.processed_count = 0
 
     # start processing the news stream
@@ -40,6 +42,8 @@ class StreamProcessor:
             return
         self.is_running = True
         self._task = asyncio.create_task(self._process_stream())
+        # start cleanup task
+        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
     # stop processing
     async def stop(self):
@@ -48,6 +52,12 @@ class StreamProcessor:
             self._task.cancel()
             try:
                 await self._task
+            except asyncio.CancelledError:
+                pass
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
             except asyncio.CancelledError:
                 pass
 
@@ -113,6 +123,7 @@ class StreamProcessor:
 
             # process the article
             await self._process_article(article)
+            state.last_processed_time = article_time
 
             # show progress
             if state.total_processed % 10 == 0:
@@ -200,3 +211,29 @@ class StreamProcessor:
             category = match.group(1).split('-')[0]
             return category
         return None
+
+    # periodic cleanup loop
+    async def _cleanup_loop(self):
+        while self.is_running:
+            try:
+                await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+                if not self.is_running:
+                    break
+
+                # cleanup expired breaking news
+                expired_count = state.cleanup_expired_breaking_news()
+                if expired_count > 0:
+                    print(
+                        f"Cleaned up {expired_count} expired breaking news items")
+
+                # cleanup old topic windows
+                cleaned_topics = state.cleanup_topic_windows()
+                if cleaned_topics > 0:
+                    print(f"Cleaned up {cleaned_topics} topic windows")
+
+                state.last_cleanup_time = datetime.now(timezone.utc)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"Error in cleanup loop: {e}")

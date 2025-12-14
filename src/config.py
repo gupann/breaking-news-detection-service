@@ -52,3 +52,7 @@ CATEGORY_SCORES = {
 
 # default category score for unknown categories
 DEFAULT_CATEGORY_SCORE = 0.5
+
+# state management
+BREAKING_NEWS_TTL_HOURS = 6  # breaking news expires after 6 hours
+CLEANUP_INTERVAL_SECONDS = 300  # run cleanup every 5 minutes
