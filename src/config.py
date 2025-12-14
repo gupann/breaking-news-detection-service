@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 # paths
@@ -56,3 +57,7 @@ DEFAULT_CATEGORY_SCORE = 0.5
 # state management
 BREAKING_NEWS_TTL_HOURS = 6  # breaking news expires after 6 hours
 CLEANUP_INTERVAL_SECONDS = 300  # run cleanup every 5 minutes
+
+# Redis configuration (for distributed state)
+REDIS_URL = os.getenv("REDIS_URL", None)
+USE_REDIS = REDIS_URL is not None

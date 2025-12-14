@@ -41,3 +41,7 @@ Thumbs.db
 *.log
 *.csv
 
+
+# Redis database dump files
+dump.rdb
+*.rdb

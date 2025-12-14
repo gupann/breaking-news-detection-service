@@ -2,11 +2,11 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from src.config import BREAKING_NEWS_TTL_HOURS, VELOCITY_WINDOW_MINUTES
+from src.config import BREAKING_NEWS_TTL_HOURS, VELOCITY_WINDOW_MINUTES, USE_REDIS, REDIS_URL
 from src.models import ScoredArticle
 
 
-class StateStore:
+class InMemoryStateStore:
     def __init__(self):
         self.reset()
 
@@ -30,7 +30,8 @@ class StateStore:
     def get_processing_rate(self) -> float:
         if self.total_processed == 0:
             return 0.0
-        elapsed = (datetime.now(timezone.utc) - self.start_time).total_seconds()
+        elapsed = (datetime.now(timezone.utc) -
+                   self.start_time).total_seconds()
         if elapsed == 0:
             return 0.0
         return self.total_processed / elapsed
@@ -80,5 +81,16 @@ class StateStore:
         return cleaned_topics
 
 
-# global state instance
-state = StateStore()
+# global state instance - use Redis if configured, otherwise in-memory
+if USE_REDIS:
+    try:
+        from src.state_redis import RedisStateStore
+        state = RedisStateStore(redis_url=REDIS_URL)
+        print(f"Using Redis state store at {REDIS_URL}")
+    except (ImportError, ConnectionError) as e:
+        print(f"Warning: Failed to initialize Redis state store: {e}")
+        print("Falling back to in-memory state store")
+        state = InMemoryStateStore()
+else:
+    state = InMemoryStateStore()
+    print("Using in-memory state store")
