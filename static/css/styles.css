@@ -1,0 +1,26 @@
+/* Main stylesheet - imports all modular CSS files */
+@import url('variables.css');
+@import url('base.css');
+@import url('layout.css');
+@import url('cards.css');
+
+/* Additional utility classes */
+.text-muted {
+  color: var(--text-secondary);
+}
+
+.text-accent {
+  background-image: linear-gradient(to right, hsl(var(--teal-text-subtle)), hsl(var(--cyan-text-subtle)));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.mt-sm {
+  margin-top: var(--spacing-sm);
+}
+
+.mt-md {
+  margin-top: var(--spacing-md);
+}
+

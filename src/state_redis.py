@@ -31,6 +31,9 @@ class RedisStateStore:
         self.KEY_SIMULATION = "simulation_time"
         self.KEY_LAST_PROCESSED = "last_processed_time"
         self.KEY_LAST_CLEANUP = "last_cleanup_time"
+        self.KEY_PROCESSING_COMPLETE = "processing_complete"
+        self.KEY_PROCESSING_COMPLETE_TIME = "processing_complete_time"
+        self.KEY_FINAL_RATE = "final_processing_rate"
 
         # initialize connection
         self._ensure_connection()
@@ -66,6 +69,9 @@ class RedisStateStore:
         self.redis_client.delete(self.KEY_SIMULATION)
         self.redis_client.delete(self.KEY_LAST_PROCESSED)
         self.redis_client.delete(self.KEY_LAST_CLEANUP)
+        self.redis_client.delete(self.KEY_PROCESSING_COMPLETE)
+        self.redis_client.delete(self.KEY_PROCESSING_COMPLETE_TIME)
+        self.redis_client.delete(self.KEY_FINAL_RATE)
 
         # set start time
         self.redis_client.set(
@@ -145,7 +151,53 @@ class RedisStateStore:
         else:
             self.redis_client.set(self.KEY_LAST_CLEANUP, value.isoformat())
 
+    def get_uptime_seconds(self) -> float:
+        return (datetime.now(timezone.utc) - self.start_time).total_seconds()
+
+    @property
+    def processing_complete(self) -> bool:
+        result = self.redis_client.get(self.KEY_PROCESSING_COMPLETE)
+        return result == "true" if result else False
+
+    @processing_complete.setter
+    def processing_complete(self, value: bool):
+        if value:
+            self.redis_client.set(self.KEY_PROCESSING_COMPLETE, "true")
+        else:
+            self.redis_client.delete(self.KEY_PROCESSING_COMPLETE)
+
+    @property
+    def processing_complete_time(self) -> Optional[datetime]:
+        result = self.redis_client.get(self.KEY_PROCESSING_COMPLETE_TIME)
+        if result:
+            return datetime.fromisoformat(result)
+        return None
+
+    @processing_complete_time.setter
+    def processing_complete_time(self, value: Optional[datetime]):
+        if value is None:
+            self.redis_client.delete(self.KEY_PROCESSING_COMPLETE_TIME)
+        else:
+            self.redis_client.set(
+                self.KEY_PROCESSING_COMPLETE_TIME, value.isoformat())
+
+    @property
+    def final_processing_rate(self) -> Optional[float]:
+        result = self.redis_client.get(self.KEY_FINAL_RATE)
+        return float(result) if result else None
+
+    @final_processing_rate.setter
+    def final_processing_rate(self, value: Optional[float]):
+        if value is None:
+            self.redis_client.delete(self.KEY_FINAL_RATE)
+        else:
+            self.redis_client.set(self.KEY_FINAL_RATE, str(value))
+
     def get_processing_rate(self) -> float:
+        # if processing is complete, return frozen rate
+        if self.processing_complete and self.final_processing_rate is not None:
+            return self.final_processing_rate
+
         total = self.total_processed
         if total == 0:
             return 0.0
@@ -155,8 +207,11 @@ class RedisStateStore:
             return 0.0
         return total / elapsed
 
-    def get_uptime_seconds(self) -> float:
-        return (datetime.now(timezone.utc) - self.start_time).total_seconds()
+    def mark_processing_complete(self):
+        if not self.processing_complete:
+            self.processing_complete = True
+            self.processing_complete_time = datetime.now(timezone.utc)
+            self.final_processing_rate = self.get_processing_rate()
 
     def cleanup_expired_breaking_news(self) -> int:
         if self.simulation_time is None:

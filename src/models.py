@@ -26,7 +26,8 @@ class ScoredArticle(BaseModel):
     is_breaking: bool = False
     detected_keywords: list[str] = []
     topic: Optional[str] = None
-    detected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    detected_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc))
 
 # breaking news item for API response
 
@@ -52,6 +53,8 @@ class StatsResponse(BaseModel):
     breaking_news_count: int
     active_topics: int
     processing_rate: float  # articles per second
+    processing_status: str  # "processing" or "complete"
+    final_processing_rate: Optional[float] = None  # frozen rate when complete
     simulation_time: Optional[datetime]
     real_start_time: datetime
     uptime_seconds: float

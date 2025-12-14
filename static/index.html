@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Breaking News Detection Service</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    /* Inline styles for immediate loading */
+    body { background-color: #000000; color: #ffffff; }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-content">
+      <div class="logo">
+        <div class="logo-icon">
+          <img src="/static/images/cast-logo.jpeg" alt="Logo" width="48" height="48">
+        </div>
+        <span>Breaking News Detection</span>
+      </div>
+      <button id="refresh-btn" class="btn btn-secondary">
+        Refresh
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <div class="container">
+    <!-- Statistics Section -->
+    <div id="stats-container" class="stats-grid">
+      <!-- Stats will be loaded here -->
+    </div>
+
+    <!-- Main Content Grid -->
+    <div class="main-content">
+      <!-- Breaking News Feed -->
+      <main>
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Breaking News</h2>
+            <span class="text-muted" id="last-updated">Auto-refreshing every 30s • Score ≥ 50%</span>
+          </div>
+          <div class="card-body">
+            <div id="breaking-news-list" class="loading">
+              Loading breaking news...
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <!-- Topic Filter -->
+        <div class="filter-section">
+          <h3 class="filter-title">Filter by Topic</h3>
+          <div class="filter-group">
+            <select id="topic-filter" class="filter-select">
+              <option value="">All Topics</option>
+              <!-- Topics will be loaded here -->
+            </select>
+          </div>
+        </div>
+
+        <!-- Info Card -->
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">About</h3>
+          </div>
+          <div class="card-body">
+            <p class="text-muted">
+              Real-time breaking news detection from news streams.
+              Updates automatically every 30 seconds.
+            </p>
+          </div>
+        </div>
+
+        <!-- Health Info Card -->
+        <div class="card health-status-card">
+          <div class="card-header">
+            <h3 class="card-title">System Status</h3>
+          </div>
+          <div class="card-body">
+            <div id="health-info" class="loading">
+              Loading status...
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script type="module" src="/static/js/dashboard.js"></script>
+</body>
+</html>
+

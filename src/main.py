@@ -8,6 +8,8 @@ from typing import Optional
 import pandas as pd
 from dateutil import parser as date_parser
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.config import (
     DATA_FILE,
@@ -18,6 +20,7 @@ from src.config import (
     WEIGHT_CATEGORY,
     WEIGHT_RECENCY,
     CLEANUP_INTERVAL_SECONDS,
+    STATIC_DIR,
 )
 from src.models import NewsArticle, ScoredArticle
 from src.api.routes import api_router
@@ -37,10 +40,10 @@ processor: Optional["StreamProcessor"] = None
 # lifespan context manager for FastAPI
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """manage stream processor lifecycle"""
     global processor
 
-    # startup: start stream processor
+    # startup: reset state and start stream processor
+    state.reset()
     processor = StreamProcessor(
         str(DATA_FILE), time_acceleration=TIME_ACCELERATION)
     await processor.start()
@@ -64,6 +67,20 @@ app = FastAPI(
 
 # register API routes
 app.include_router(api_router)
+
+# root route - serve dashboard directly
+
+
+@app.get("/")
+async def root():
+    index_file = STATIC_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(str(index_file))
+    return {"error": "dashboard not found"}
+
+# serve static files (dashboard)
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 class StreamProcessor:
@@ -102,6 +119,20 @@ class StreamProcessor:
 
     # loads CSV and processes articles chronologically
     async def _process_stream(self):
+        # process most recent week by default
+        try:
+            df = pd.read_csv(self.data_file)
+            df['parsed_date'] = df['pubDate'].apply(self._parse_date)
+            df = df.dropna(subset=['parsed_date'])
+            if len(df) > 0:
+                max_date = df['parsed_date'].max()
+                min_date = max_date - timedelta(days=7)
+                await self._process_week_range(min_date, max_date)
+        except Exception as e:
+            print(f"Failed to process stream: {e}")
+
+    # process articles in a specific date range
+    async def _process_week_range(self, min_date: datetime, max_date: datetime):
         print(f"Loading data from {self.data_file}")
 
         try:
@@ -117,14 +148,11 @@ class StreamProcessor:
         df = df.dropna(subset=['parsed_date'])
         df = df.sort_values('parsed_date')
 
-        # filter to most recent week of data
-        if len(df) > 0:
-            max_date = df['parsed_date'].max()
-            min_date = max_date - timedelta(days=7)
-            df = df[(df['parsed_date'] >= min_date) &
-                    (df['parsed_date'] <= max_date)]
-            print(f"Processing week: {min_date.date()} to {max_date.date()}")
-            print(f"{len(df)} articles in time range")
+        # filter to specified date range
+        df = df[(df['parsed_date'] >= min_date) &
+                (df['parsed_date'] <= max_date)]
+        print(f"Processing week: {min_date.date()} to {max_date.date()}")
+        print(f"{len(df)} articles in time range")
 
         # process articles with time simulation
         prev_article_time = None
@@ -172,6 +200,8 @@ class StreamProcessor:
 
         print(
             f"Stream processing complete. Total: {state.total_processed} articles")
+        # mark processing as complete and freeze the rate
+        state.mark_processing_complete()
         self.is_running = False
 
     # process a single article

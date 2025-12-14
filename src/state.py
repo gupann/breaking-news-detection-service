@@ -25,9 +25,17 @@ class InMemoryStateStore:
         self.simulation_time: Optional[datetime] = None
         self.last_processed_time: Optional[datetime] = None
         self.last_cleanup_time: Optional[datetime] = None
+        # processing status
+        self.processing_complete: bool = False
+        self.processing_complete_time: Optional[datetime] = None
+        self.final_processing_rate: Optional[float] = None
 
     # get processing rate (articles per second)
     def get_processing_rate(self) -> float:
+        # if processing is complete, return frozen rate
+        if self.processing_complete and self.final_processing_rate is not None:
+            return self.final_processing_rate
+        
         if self.total_processed == 0:
             return 0.0
         elapsed = (datetime.now(timezone.utc) -
@@ -35,6 +43,13 @@ class InMemoryStateStore:
         if elapsed == 0:
             return 0.0
         return self.total_processed / elapsed
+    
+    # mark processing as complete and freeze the rate
+    def mark_processing_complete(self):
+        if not self.processing_complete:
+            self.processing_complete = True
+            self.processing_complete_time = datetime.now(timezone.utc)
+            self.final_processing_rate = self.get_processing_rate()
 
     # get uptime in seconds
     def get_uptime_seconds(self) -> float:
