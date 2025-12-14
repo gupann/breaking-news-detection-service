@@ -12,9 +12,17 @@ from src.config import (
     BREAKING_SCORE_THRESHOLD,
     WEIGHT_KEYWORD,
     WEIGHT_VELOCITY,
+    WEIGHT_CATEGORY,
+    WEIGHT_RECENCY,
 )
 from src.models import NewsArticle, ScoredArticle
-from src.scoring import calculate_keyword_score, calculate_velocity_score, extract_topic
+from src.scoring import (
+    calculate_keyword_score,
+    calculate_velocity_score,
+    calculate_category_score,
+    calculate_recency_score,
+    extract_topic,
+)
 from src.state import state
 
 
@@ -135,10 +143,18 @@ class StreamProcessor:
         velocity_score = calculate_velocity_score(
             topic, article.pub_date, article.id)
 
+        # calculate category score
+        category_score = calculate_category_score(article.category)
+
+        # calculate recency score
+        recency_score = calculate_recency_score(article.pub_date)
+
         # calculate total score
         total_score = (
             keyword_score * WEIGHT_KEYWORD +
-            velocity_score * WEIGHT_VELOCITY
+            velocity_score * WEIGHT_VELOCITY +
+            category_score * WEIGHT_CATEGORY +
+            recency_score * WEIGHT_RECENCY
         )
 
         # create scored article
@@ -146,8 +162,8 @@ class StreamProcessor:
             article=article,
             keyword_score=keyword_score,
             velocity_score=velocity_score,
-            category_score=0.0,  # TODO: implement category score
-            recency_score=0.0,  # TODO: implement recency score
+            category_score=category_score,
+            recency_score=recency_score,
             total_score=total_score,
             is_breaking=total_score >= BREAKING_SCORE_THRESHOLD,
             detected_keywords=detected_keywords,

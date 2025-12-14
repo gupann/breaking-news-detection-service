@@ -6,6 +6,8 @@ from src.config import (
     URGENCY_KEYWORDS,
     VELOCITY_WINDOW_MINUTES,
     VELOCITY_THRESHOLD,
+    CATEGORY_SCORES,
+    DEFAULT_CATEGORY_SCORE,
 )
 from src.state import state
 
@@ -79,3 +81,27 @@ def extract_topic(title: str) -> str:
         return words[0].lower()
 
     return 'general'
+
+
+# calculate category score based on news category priority
+def calculate_category_score(category: Optional[str]) -> float:
+    if not category:
+        return DEFAULT_CATEGORY_SCORE
+    return CATEGORY_SCORES.get(category, DEFAULT_CATEGORY_SCORE)
+
+
+# calculate recency score based on article age
+def calculate_recency_score(pub_date: datetime) -> float:
+    if state.simulation_time is None:
+        return 1.0
+
+    age = (state.simulation_time - pub_date).total_seconds() / 3600  # hours
+
+    if age < 1:
+        return 1.0
+    elif age < 3:
+        return 0.8
+    elif age < 6:
+        return 0.5
+    else:
+        return 0.2
