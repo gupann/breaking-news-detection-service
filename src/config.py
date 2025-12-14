@@ -10,9 +10,12 @@ BATCH_SIZE = 10
 
 # breaking news detection thresholds
 BREAKING_SCORE_THRESHOLD = 0.50
+VELOCITY_WINDOW_MINUTES = 30
+VELOCITY_THRESHOLD = 3
 
 # scoring weights
 WEIGHT_KEYWORD = 0.40
+WEIGHT_VELOCITY = 0.35
 
 # urgency keywords that indicate breaking news
 URGENCY_KEYWORDS = {

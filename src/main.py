@@ -11,30 +11,11 @@ from src.config import (
     TIME_ACCELERATION,
     BREAKING_SCORE_THRESHOLD,
     WEIGHT_KEYWORD,
-    URGENCY_KEYWORDS,
+    WEIGHT_VELOCITY,
 )
 from src.models import NewsArticle, ScoredArticle
-
-
-# state management
-class StateStore:
-    def __init__(self):
-        self.reset()
-
-    # reset all state
-    def reset(self):
-        # active breaking news: id -> ScoredArticle
-        self.breaking_news: dict[str, ScoredArticle] = {}
-        # deduplication: set of content hashes
-        self.seen_hashes: set[str] = set()
-        # statistics
-        self.total_processed: int = 0
-        self.start_time: datetime = datetime.now(timezone.utc)
-        self.simulation_time: Optional[datetime] = None
-
-
-# global state instance
-state = StateStore()
+from src.scoring import calculate_keyword_score, calculate_velocity_score, extract_topic
+from src.state import state
 
 
 class StreamProcessor:
@@ -144,20 +125,27 @@ class StreamProcessor:
         state.seen_hashes.add(content_hash)
 
         # extract topic for tracking
-        topic = self._extract_topic(article.title)
+        topic = extract_topic(article.title)
 
         # calculate keyword score
-        keyword_score, detected_keywords = self._calculate_keyword_score(
+        keyword_score, detected_keywords = calculate_keyword_score(
             article.title)
 
+        # calculate velocity score
+        velocity_score = calculate_velocity_score(
+            topic, article.pub_date, article.id)
+
         # calculate total score
-        total_score = keyword_score * WEIGHT_KEYWORD
+        total_score = (
+            keyword_score * WEIGHT_KEYWORD +
+            velocity_score * WEIGHT_VELOCITY
+        )
 
         # create scored article
         scored = ScoredArticle(
             article=article,
             keyword_score=keyword_score,
-            velocity_score=0.0,  # TODO: implement velocity score
+            velocity_score=velocity_score,
             category_score=0.0,  # TODO: implement category score
             recency_score=0.0,  # TODO: implement recency score
             total_score=total_score,
@@ -196,51 +184,3 @@ class StreamProcessor:
             category = match.group(1).split('-')[0]
             return category
         return None
-
-    # extract main topic from title for tracking
-    def _extract_topic(self, title: str) -> str:
-        title_lower = title.lower()
-
-        # check major topics
-        major_topics = [
-            'ukraine', 'russia', 'putin', 'zelensky', 'kyiv', 'moscow',
-            'covid', 'coronavirus', 'pandemic',
-            'china', 'taiwan', 'beijing',
-            'israel', 'gaza', 'palestine',
-            'climate', 'earthquake', 'hurricane',
-            'trump', 'biden', 'election',
-        ]
-
-        for topic in major_topics:
-            if topic in title_lower:
-                return topic
-
-        # fallback: first significant word
-        words = re.findall(r'\b[a-zA-Z]{4,}\b', title)
-        if words:
-            return words[0].lower()
-
-        return 'general'
-
-    # calculate urgency score based on keywords
-    def _calculate_keyword_score(self, title: str) -> tuple[float, list[str]]:
-        title_lower = title.lower()
-        detected = []
-
-        for keyword in URGENCY_KEYWORDS:
-            if keyword in title_lower:
-                detected.append(keyword)
-
-        if not detected:
-            return 0.0, []
-
-        # score based on number and type of keywords
-        score = min(len(detected) * 0.3, 1.0)
-
-        # increase score for high urgency keywords
-        high_urgency = {'breaking', 'just in',
-                        'urgent', 'killed', 'attack', 'war'}
-        if any(k in detected for k in high_urgency):
-            score = min(score + 0.3, 1.0)
-
-        return score, detected
