@@ -1,14 +1,40 @@
 import asyncio
 import hashlib
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pandas as pd
 from dateutil import parser as date_parser
 
-from src.config import DATA_FILE, TIME_ACCELERATION
-from src.models import NewsArticle
+from src.config import (
+    TIME_ACCELERATION,
+    BREAKING_SCORE_THRESHOLD,
+    WEIGHT_KEYWORD,
+    URGENCY_KEYWORDS,
+)
+from src.models import NewsArticle, ScoredArticle
+
+
+# state management
+class StateStore:
+    def __init__(self):
+        self.reset()
+
+    # reset all state
+    def reset(self):
+        # active breaking news: id -> ScoredArticle
+        self.breaking_news: dict[str, ScoredArticle] = {}
+        # deduplication: set of content hashes
+        self.seen_hashes: set[str] = set()
+        # statistics
+        self.total_processed: int = 0
+        self.start_time: datetime = datetime.now(timezone.utc)
+        self.simulation_time: Optional[datetime] = None
+
+
+# global state instance
+state = StateStore()
 
 
 class StreamProcessor:
@@ -19,12 +45,14 @@ class StreamProcessor:
         self._task: Optional[asyncio.Task] = None
         self.processed_count = 0
 
+    # start processing the news stream
     async def start(self):
         if self.is_running:
             return
         self.is_running = True
         self._task = asyncio.create_task(self._process_stream())
 
+    # stop processing
     async def stop(self):
         self.is_running = False
         if self._task:
@@ -34,6 +62,7 @@ class StreamProcessor:
             except asyncio.CancelledError:
                 pass
 
+    # loads CSV and processes articles chronologically
     async def _process_stream(self):
         print(f"Loading data from {self.data_file}...")
 
@@ -80,6 +109,9 @@ class StreamProcessor:
 
             prev_article_time = article_time
 
+            # update simulation time
+            state.simulation_time = article_time
+
             # create article object
             article = NewsArticle(
                 id=self._generate_id(row['guid']),
@@ -90,15 +122,56 @@ class StreamProcessor:
                 category=self._extract_category(str(row['link'])),
             )
 
-            # track processed count and show progress
-            self.processed_count += 1
-            if self.processed_count % 10 == 0:
-                print(f"Processed {self.processed_count} articles | "
+            # process the article
+            await self._process_article(article)
+
+            # show progress
+            if state.total_processed % 10 == 0:
+                print(f"Processed {state.total_processed} articles | "
+                      f"Breaking: {len(state.breaking_news)} | "
                       f"Latest: {article.title[:50]}...")
 
         print(
-            f"Stream processing complete. Total: {self.processed_count} articles")
+            f"Stream processing complete. Total: {state.total_processed} articles")
         self.is_running = False
+
+    # process a single article
+    async def _process_article(self, article: NewsArticle):
+        # deduplication
+        content_hash = self._hash_content(article.title)
+        if content_hash in state.seen_hashes:
+            return  # skip duplicate
+        state.seen_hashes.add(content_hash)
+
+        # extract topic for tracking
+        topic = self._extract_topic(article.title)
+
+        # calculate keyword score
+        keyword_score, detected_keywords = self._calculate_keyword_score(
+            article.title)
+
+        # calculate total score
+        total_score = keyword_score * WEIGHT_KEYWORD
+
+        # create scored article
+        scored = ScoredArticle(
+            article=article,
+            keyword_score=keyword_score,
+            velocity_score=0.0,  # TODO: implement velocity score
+            category_score=0.0,  # TODO: implement category score
+            recency_score=0.0,  # TODO: implement recency score
+            total_score=total_score,
+            is_breaking=total_score >= BREAKING_SCORE_THRESHOLD,
+            detected_keywords=detected_keywords,
+            topic=topic,
+            detected_at=datetime.now(timezone.utc),
+        )
+
+        # store if breaking
+        if scored.is_breaking:
+            state.breaking_news[article.id] = scored
+
+        state.total_processed += 1
 
     def _parse_date(self, date_str: str) -> Optional[datetime]:
         try:
@@ -106,13 +179,68 @@ class StreamProcessor:
         except Exception:
             return None
 
+    # generate a short ID from the GUID
     def _generate_id(self, guid: str) -> str:
         return hashlib.md5(guid.encode()).hexdigest()[:12]
 
+    # create a hash for deduplication
+    def _hash_content(self, title: str) -> str:
+        normalized = title.lower().strip()
+        return hashlib.md5(normalized.encode()).hexdigest()
+
+    # extract category from BBC URL path
+    # urls like: https://www.bbc.co.uk/news/world-europe-60638042
     def _extract_category(self, url: str) -> Optional[str]:
-        # urls like: https://www.bbc.co.uk/news/world-europe-60638042
         match = re.search(r'bbc\.co\.uk/(?:news|sport)/([a-z-]+)', url.lower())
         if match:
             category = match.group(1).split('-')[0]
             return category
         return None
+
+    # extract main topic from title for tracking
+    def _extract_topic(self, title: str) -> str:
+        title_lower = title.lower()
+
+        # check major topics
+        major_topics = [
+            'ukraine', 'russia', 'putin', 'zelensky', 'kyiv', 'moscow',
+            'covid', 'coronavirus', 'pandemic',
+            'china', 'taiwan', 'beijing',
+            'israel', 'gaza', 'palestine',
+            'climate', 'earthquake', 'hurricane',
+            'trump', 'biden', 'election',
+        ]
+
+        for topic in major_topics:
+            if topic in title_lower:
+                return topic
+
+        # fallback: first significant word
+        words = re.findall(r'\b[a-zA-Z]{4,}\b', title)
+        if words:
+            return words[0].lower()
+
+        return 'general'
+
+    # calculate urgency score based on keywords
+    def _calculate_keyword_score(self, title: str) -> tuple[float, list[str]]:
+        title_lower = title.lower()
+        detected = []
+
+        for keyword in URGENCY_KEYWORDS:
+            if keyword in title_lower:
+                detected.append(keyword)
+
+        if not detected:
+            return 0.0, []
+
+        # score based on number and type of keywords
+        score = min(len(detected) * 0.3, 1.0)
+
+        # increase score for high urgency keywords
+        high_urgency = {'breaking', 'just in',
+                        'urgent', 'killed', 'attack', 'war'}
+        if any(k in detected for k in high_urgency):
+            score = min(score + 0.3, 1.0)
+
+        return score, detected
