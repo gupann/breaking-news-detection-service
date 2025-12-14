@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from pydantic import BaseModel, Field
 
@@ -26,7 +26,7 @@ class ScoredArticle(BaseModel):
     is_breaking: bool = False
     detected_keywords: list[str] = []
     topic: Optional[str] = None
-    detected_at: datetime = Field(default_factory=datetime.utcnow)
+    detected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 # breaking news item for API response
 

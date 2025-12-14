@@ -1,13 +1,16 @@
 import asyncio
 import hashlib
 import re
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pandas as pd
 from dateutil import parser as date_parser
+from fastapi import FastAPI
 
 from src.config import (
+    DATA_FILE,
     TIME_ACCELERATION,
     BREAKING_SCORE_THRESHOLD,
     WEIGHT_KEYWORD,
@@ -17,6 +20,7 @@ from src.config import (
     CLEANUP_INTERVAL_SECONDS,
 )
 from src.models import NewsArticle, ScoredArticle
+from src.api.routes import api_router
 from src.scoring import (
     calculate_keyword_score,
     calculate_velocity_score,
@@ -25,6 +29,41 @@ from src.scoring import (
     extract_topic,
 )
 from src.state import state
+
+# global stream processor instance
+processor: Optional["StreamProcessor"] = None
+
+
+# lifespan context manager for FastAPI
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """manage stream processor lifecycle"""
+    global processor
+
+    # startup: start stream processor
+    processor = StreamProcessor(
+        str(DATA_FILE), time_acceleration=TIME_ACCELERATION)
+    await processor.start()
+    print("Stream processor started")
+
+    yield
+
+    # shutdown: stop stream processor
+    if processor:
+        await processor.stop()
+        print("Stream processor stopped")
+
+
+# create FastAPI app
+app = FastAPI(
+    title="Breaking News Detection Service",
+    description="Real-time breaking news detection from news streams",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# register API routes
+app.include_router(api_router)
 
 
 class StreamProcessor:
@@ -63,7 +102,7 @@ class StreamProcessor:
 
     # loads CSV and processes articles chronologically
     async def _process_stream(self):
-        print(f"Loading data from {self.data_file}...")
+        print(f"Loading data from {self.data_file}")
 
         try:
             df = pd.read_csv(self.data_file)
@@ -129,7 +168,7 @@ class StreamProcessor:
             if state.total_processed % 10 == 0:
                 print(f"Processed {state.total_processed} articles | "
                       f"Breaking: {len(state.breaking_news)} | "
-                      f"Latest: {article.title[:50]}...")
+                      f"Latest: {article.title[:50]}")
 
         print(
             f"Stream processing complete. Total: {state.total_processed} articles")
